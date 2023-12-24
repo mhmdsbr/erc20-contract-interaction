@@ -1,22 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { useSendTransaction, useWaitForTransaction } from 'wagmi';
+import { useContractWrite, useSendTransaction, useWaitForTransaction } from 'wagmi';
 import { Container, Row, Col, Form, Button, Alert } from 'react-bootstrap';
 import TransactionDetailsModal from "@/components/TransactionDetailsModal";
+import {wagmiContractConfig} from "@/components/contracts";
 
 interface SendTransactionProps {
-    mintedAmount?: number;
+    mintedAmount?: number | undefined;
 }
+
 export function SendTransaction({ mintedAmount = 0 } : SendTransactionProps) {
     const [toAddress, setToAddress] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
-    const { data, error, isLoading, isError, sendTransaction } = useSendTransaction();
+    // const { data, error, isLoading, isError, sendTransaction } = useSendTransaction();
+    const { write, data, error, isLoading, isError } = useContractWrite({
+        ...wagmiContractConfig,
+        functionName: 'transfer',
+    });
     const { data: receipt, isLoading: isPending, isSuccess } = useWaitForTransaction({ hash: data?.hash });
     const [showModal, setShowModal] = React.useState(false);
 
-    const isValidEthereumAddress = (address: string) => {
-        const regex = /^(0x)?[0-9a-fA-F]{40}$/;
-        return regex.test(address);
-    };
     useEffect(() => {
         if (isSuccess) {
             setToAddress('');
@@ -34,17 +36,29 @@ export function SendTransaction({ mintedAmount = 0 } : SendTransactionProps) {
         }
 
         const formData = new FormData(formElement);
-        const address = formData.get('address') as string;
+        let address = formData.get('address');
+        if (typeof address === 'string' && address.length >= 2) {
+            if (address.startsWith('0x')) {
+                address = address.substring(2);
+            }
 
-        if (address && isValidEthereumAddress(address)) {
+            console.log(address);
+        }
+
+        const isValidEthereumAddress = (address: any) => {
+            const regex = /[0-9A-Fa-f]{40}$/;
+            return regex.test(address);
+        };
+
+        if (address && isValidEthereumAddress(address as string)) {
             try {
                 setErrorMessage('');
-                setToAddress(address);
+                setToAddress(address as string);
 
-                await sendTransaction({
-                    to: address,
-                    value: BigInt(mintedAmount),
+                await write({
+                    args: [`0x${address}`, BigInt(mintedAmount)],
                 });
+
             } catch (error) {
                 console.error('Token transfer failed:', error);
             }
@@ -52,7 +66,6 @@ export function SendTransaction({ mintedAmount = 0 } : SendTransactionProps) {
             setErrorMessage(address ? 'Invalid Ethereum address.' : 'Recipient address is required.');
         }
     };
-
 
     const handleShowModal = () => {
         setShowModal(true);
